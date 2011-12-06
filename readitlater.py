@@ -7,7 +7,7 @@ import requests
 
 CONFIG_DIR = os.path.expanduser('~/.config/readitlater')
 SETTINGS_FILE = os.path.join(CONFIG_DIR, 'settings.json')
-REQUIRED_SETTINGS = ['username', 'password', 'api_key']
+REQUIRED_SETTINGS = ['username', 'password', 'apikey']
 
 # global settings
 settings = {}
@@ -83,7 +83,12 @@ def list_command(args):
     since = args.since or None
     reverse = args.reverse or False
 
-    res = api.get(count=count, since=since)
+    try:
+        res = api.get(count=count, since=since)
+    except Exception as e:
+        print e
+        return
+
     for item in sorted(res.list.values(), key=lambda x: x.time_added, reverse=reverse):
         time_added = datetime.fromtimestamp(float(item.time_added))
         print time_added, item.title, item.url
@@ -93,6 +98,17 @@ def read_command(args):
 
 def search_command(args):
     pass
+
+def limit_command(args):
+    api = API()
+
+    # just make request, only care about headers returned
+    try: api.api()
+    except: pass
+
+    for k,v in sorted(api._res.headers.items()):
+        if k.startswith('x-limit'):
+            print ' '.join(k[8:].split('-')) + ':', v
 
 def settings_command(args):
     def show():
@@ -139,13 +155,17 @@ if __name__ == '__main__':
     search_parser.add_argument('query', action='store', help='Search query')
     search_parser.set_defaults(command=search_command)
 
+    # limit command
+    limit_parser = subparsers.add_parser('limit', help='Print current API limits')
+    limit_parser.set_defaults(command=limit_command)
+
     # settings command
     settings_parser = subparsers.add_parser('settings', help='Show or configure settings')
     settings_subparsers = settings_parser.add_subparsers(dest='subcommand')
 
     # settings subcommand set
     settings_set_parser = settings_subparsers.add_parser('set', help='Modify settings')
-    settings_set_parser.add_argument('--api-key', action='store', help='API Key to use')
+    settings_set_parser.add_argument('--apikey', action='store', help='API Key to use')
     settings_set_parser.add_argument('--username', action='store', help='Username to use')
     settings_set_parser.add_argument('--password', action='store', help='Password to use')
     settings_set_parser.set_defaults(command=settings_command)
