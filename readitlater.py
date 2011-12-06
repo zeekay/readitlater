@@ -77,6 +77,12 @@ def settings_valid():
         return True
 
 # commands
+def add_command(args):
+    api = API()
+    res = api.add(url=args.url)
+    if not res.ok:
+        print 'Unable to add url'
+
 def list_command(args):
     # defaults
     count = args.count or 10
@@ -142,6 +148,11 @@ def settings_command(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers()
+
+    # add command
+    add_parser = subparsers.add_parser('add', help='Add url to readitlater')
+    add_parser.add_argument('url', action='store', help='Url to add')
+    add_parser.set_defaults(command=add_command)
 
     # list command
     list_parser = subparsers.add_parser('list', help='List articles')
