@@ -7,18 +7,16 @@ import requests
 
 CONFIG_DIR = os.path.expanduser('~/.config/readitlater')
 SETTINGS_FILE = os.path.join(CONFIG_DIR, 'settings.json')
-REQUIRED_SETTINGS = ['username', 'password', 'apikey']
+REQUIRED_SETTINGS = ['username', 'password', 'api_key']
 
 # global settings
 settings = {}
-
 
 class AttrDict(dict):
     def __getattr__(self, name):
         if name.startswith('_') or name == 'trait_names':
             raise AttributeError
         return self[name]
-
 
 class API(object):
     def __init__(self, url='https://readitlaterlist.com/v2/'):
@@ -44,7 +42,7 @@ class API(object):
             raise AttributeError
         return lambda **params: self.request(name, **params)
 
-
+# utility functions
 def make_dir():
     try:
         os.makedirs(CONFIG_DIR)
@@ -65,7 +63,8 @@ def load_settings():
 
 def settings_valid():
     try:
-        load_settings()
+        if not settings:
+            load_settings()
     except Exception:
         print 'Create {0} with proper values for {1} either manually or using settings command'.format(SETTINGS_FILE, ', '.join(REQUIRED_SETTINGS))
         return False
@@ -74,24 +73,6 @@ def settings_valid():
             print 'Required setting {0} missing'.format(opt)
     else:
         return True
-
-def show_settings(args):
-    try:
-        load_settings()
-        for k,v in settings.items():
-            print k + ':', v
-    except Exception as e:
-        print e
-
-def save_settings(args):
-    try: load_settings()
-    except: pass
-    for opt in ['apikey', 'username', 'password']:
-        val = getattr(args, opt)
-        if val:
-            settings[opt] = val
-    with open(SETTINGS_FILE, 'w') as f:
-        json.dump(settings, f)
 
 # commands
 def list_command(args):
@@ -114,14 +95,32 @@ def search_command(args):
     pass
 
 def settings_command(args):
-    if args.show:
-        show_settings(args)
-    else:
-        save_settings(args)
+    def show():
+        if settings_valid():
+            for k,v in settings.items():
+                print k + ':', v
+
+    def set():
+        for opt in REQUIRED_SETTINGS:
+            val = getattr(args, opt)
+            if val:
+                settings[opt] = val
+        with open(SETTINGS_FILE, 'w') as f:
+            json.dump(settings, f)
+
+    # load settings, only show errors if asked to show settings
+    try:
+        load_settings()
+    except Exception as e:
+        if args.show:
+            print e
+
+    # call requested subcommand
+    locals()[args.subcommand]()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(help='commands')
+    subparsers = parser.add_subparsers()
 
     # list command
     list_parser = subparsers.add_parser('list', help='List articles')
@@ -141,12 +140,19 @@ if __name__ == '__main__':
     search_parser.set_defaults(command=search_command)
 
     # settings command
-    settings_parser = subparsers.add_parser('settings', help='Configure settings')
-    settings_parser.add_argument('--api-key', dest='apikey', action='store', help='API Key to use')
-    settings_parser.add_argument('--username', action='store', help='Username to use')
-    settings_parser.add_argument('--password', action='store', help='Password to use')
-    settings_parser.add_argument('--show', action='store_true', help='Show settings')
-    settings_parser.set_defaults(command=settings_command)
+    settings_parser = subparsers.add_parser('settings', help='Show or configure settings')
+    settings_subparsers = settings_parser.add_subparsers(dest='subcommand')
+
+    # settings subcommand set
+    settings_set_parser = settings_subparsers.add_parser('set', help='Modify settings')
+    settings_set_parser.add_argument('--api-key', action='store', help='API Key to use')
+    settings_set_parser.add_argument('--username', action='store', help='Username to use')
+    settings_set_parser.add_argument('--password', action='store', help='Password to use')
+    settings_set_parser.set_defaults(command=settings_command)
+
+    # settings subcommand show
+    settings_show_parser = settings_subparsers.add_parser('show', help='Show current settings')
+    settings_show_parser.set_defaults(command=settings_command)
 
     # parse args
     args = parser.parse_args()
