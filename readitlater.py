@@ -31,11 +31,13 @@ class API(object):
         # inject settings
         params.update(settings)
         # make request
-        self._res = requests.get(self.url+method, params=params)
-        if not self._res.ok:
-            raise Exception(self._res.headers['status'])
-        # return response
-        return json.loads(self._res.content, object_hook=AttrDict)
+        res = requests.get(self.url+method, params=params)
+        # try to convert response content to json
+        try:
+            res.json = json.loads(res.content, object_hook=AttrDict)
+        except ValueError:
+            res.json = None
+        return res
 
     def __getattr__(self, name):
         if name.startswith('_') or name == 'trait_names':
@@ -76,37 +78,40 @@ def settings_valid():
 
 # commands
 def list_command(args):
-    api = API()
-
     # defaults
     count = args.count or 10
     since = args.since or None
     reverse = args.reverse or False
 
-    try:
-        res = api.get(count=count, since=since)
-    except Exception as e:
-        print e
-        return
-
-    for item in sorted(res.list.values(), key=lambda x: x.time_added, reverse=reverse):
-        time_added = datetime.fromtimestamp(float(item.time_added))
-        print time_added, item.title, item.url
+    api = API()
+    res = api.get(count=count, since=since)
+    if res.ok:
+        for item in sorted(res.json.list.values(), key=lambda x: x.time_added, reverse=reverse):
+            time_added = datetime.fromtimestamp(float(item.time_added))
+            print time_added, item.title, item.url
+    else:
+        print res.headers['status']
 
 def read_command(args):
-    pass
+    api = API(url='http://text.readitlaterlist.com/v2/')
+    res = api.text(url=args.url)
+    if res.ok:
+        print res.content
+    else:
+        print res.headers['status']
 
 def search_command(args):
-    pass
+    api = API()
+    res = api.get()
+    for item in sorted(res.json.list.values(), key=lambda x: x.time_added):
+        if args.query in item.url or args.query in item.title:
+            time_added = datetime.fromtimestamp(float(item.time_added))
+            print time_added, item.title, item.url
 
 def limit_command(args):
     api = API()
-
-    # just make request, only care about headers returned
-    try: api.api()
-    except: pass
-
-    for k,v in sorted(api._res.headers.items()):
+    res = api.api()
+    for k,v in sorted(res.headers.items()):
         if k.startswith('x-limit'):
             print ' '.join(k[8:].split('-')) + ':', v
 
@@ -146,8 +151,8 @@ if __name__ == '__main__':
     list_parser.set_defaults(command=list_command)
 
     # read command
-    read_parser = subparsers.add_parser('read', help='Read article')
-    read_parser.add_argument('article', action='store', help='Article to read')
+    read_parser = subparsers.add_parser('read', help='Read text version of url')
+    read_parser.add_argument('url', action='store', help='Url to read')
     read_parser.set_defaults(command=read_command)
 
     # search command
