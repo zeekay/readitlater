@@ -8,6 +8,7 @@ import requests
 CONFIG_DIR = os.path.expanduser('~/.config/readitlater')
 SETTINGS_FILE = os.path.join(CONFIG_DIR, 'settings.json')
 REQUIRED_SETTINGS = ['username', 'password', 'apikey']
+DATE_FORMAT = "%a %b %d %I:%M %p"
 
 # global settings
 settings = {}
@@ -53,6 +54,10 @@ def make_dir():
             pass
         else: raise
 
+def format_date(timestamp):
+    dt = datetime.fromtimestamp(float(timestamp))
+    return dt.strftime(DATE_FORMAT)
+
 def load_settings():
     if not os.path.exists(SETTINGS_FILE):
         make_dir()
@@ -93,8 +98,7 @@ def list_command(args):
     res = api.get(count=count, since=since)
     if res.ok:
         for item in sorted(res.json.list.values(), key=lambda x: x.time_added, reverse=reverse):
-            time_added = datetime.fromtimestamp(float(item.time_added))
-            print time_added, item.title, item.url
+            print format_date(item.time_added), item.title, item.url
     else:
         print res.headers['status']
 
@@ -110,7 +114,7 @@ def search_command(args):
     api = API()
     res = api.get()
     for item in sorted(res.json.list.values(), key=lambda x: x.time_added):
-        if args.query in item.url or args.query in item.title:
+        if args.query in ' '.join([item.url, item.title]):
             time_added = datetime.fromtimestamp(float(item.time_added))
             print time_added, item.title, item.url
 
