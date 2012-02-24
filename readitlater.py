@@ -12,7 +12,7 @@ import requests
 
 CONFIG_DIR = os.path.expanduser('~/.config/readitlater')
 SETTINGS_FILE = os.path.join(CONFIG_DIR, 'settings.json')
-REQUIRED_SETTINGS = ['username', 'password', 'apikey']
+REQUIRED_SETTINGS = ('username', 'password', 'apikey')
 DATE_FORMAT = "%a %b %d %I:%M %p"
 
 
