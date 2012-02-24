@@ -15,9 +15,6 @@ SETTINGS_FILE = os.path.join(CONFIG_DIR, 'settings.json')
 REQUIRED_SETTINGS = ['username', 'password', 'apikey']
 DATE_FORMAT = "%a %b %d %I:%M %p"
 
-# global settings
-settings = {}
-
 
 class AttrDict(dict):
     def __getattr__(self, name):
@@ -27,17 +24,15 @@ class AttrDict(dict):
 
 
 class API(object):
-    def __init__(self, url='https://readitlaterlist.com/v2/'):
+    def __init__(self, settings, url='https://readitlaterlist.com/v2/'):
+        self.settings = settings
         self.url = url
 
     def request(self, method, **params):
-        if not settings:
-            # Attempt to load settings in case this module is used externally or interactively.
-            load_settings()
         # remove any invalid params
         params = {k: v for k, v in params.items() if v}
         # inject settings
-        params.update(settings)
+        params.update(self.settings)
         # make request
         res = requests.get(self.url + method, params=params)
         # try to convert response content to json
@@ -69,46 +64,37 @@ def format_date(timestamp):
     return dt.strftime(DATE_FORMAT)
 
 
-def load_settings():
+def load_settings(validate=True):
     if not os.path.exists(SETTINGS_FILE):
         make_dir()
         raise Exception('{0} does not exist'.format(SETTINGS_FILE))
     try:
         with open(SETTINGS_FILE) as f:
-            settings.update(json.load(f))
+            settings = json.load(f)
     except ValueError:
         raise Exception('{0} is invalid'.format(SETTINGS_FILE))
 
-
-def settings_valid():
-    try:
-        if not settings:
-            load_settings()
-    except Exception:
-        print 'Create {0} with proper values for {1} either manually or using settings command'.format(SETTINGS_FILE, ', '.join(REQUIRED_SETTINGS))
-        return False
-    for opt in REQUIRED_SETTINGS:
-        if opt not in settings:
-            print 'Required setting {0} missing'.format(opt)
-    else:
-        return True
+    if validate:
+        missing = [opt for opt in REQUIRED_SETTINGS if not opt in settings]
+        if missing:
+            print 'Missing required settings: {0}'.format(', '.join(missing))
+            return False
+    return settings
 
 
 # commands
-def add_command(args):
-    api = API()
+def add_command(api, args):
     res = api.add(url=args.url)
     if not res.ok:
         print 'Unable to add url'
 
 
-def list_command(args):
+def list_command(api, args):
     # defaults
     count = args.count or 10
     since = args.since or None
     reverse = args.reverse or False
 
-    api = API()
     res = api.get(count=count, since=since)
     if res.ok:
         for item in sorted(res.json.list.values(), key=lambda x: x.time_added, reverse=reverse):
@@ -117,7 +103,7 @@ def list_command(args):
         print res.headers['status']
 
 
-def read_command(args):
+def read_command(api, args):
     from readability.readability import Document
     import html2text
     h = html2text.HTML2Text()
@@ -133,8 +119,7 @@ def read_command(args):
         print res.headers['status']
 
 
-def search_command(args):
-    api = API()
+def search_command(api, args):
     res = api.get()
     for item in sorted(res.json.list.values(), key=lambda x: x.time_added):
         if args.query in ' '.join([item.url, item.title]):
@@ -142,8 +127,7 @@ def search_command(args):
             print time_added, item.title, item.url
 
 
-def limit_command(args):
-    api = API()
+def limit_command(api, args):
     res = api.api()
     for k, v in sorted(res.headers.items()):
         if k.startswith('x-limit'):
@@ -151,28 +135,28 @@ def limit_command(args):
 
 
 def settings_command(args):
-    def show():
-        if settings_valid():
-            for k, v in settings.items():
-                print k + ':', v
+    try:
+        settings = load_settings()
+    except:
+        settings = {k:'' for k in REQUIRED_SETTINGS}
 
-    def set():
+    if args.show:
+        for k, v in settings.items():
+            print k + ':', v
+    else:
+        new_settings = {}
         for opt in REQUIRED_SETTINGS:
             val = getattr(args, opt)
             if val:
-                settings[opt] = val
+                new_settings[opt] = val
+
+        if not new_settings:
+            return settings_parser.print_help()
+
+        settings.update(new_settings)
         with open(SETTINGS_FILE, 'w') as f:
             json.dump(settings, f)
 
-    # load settings, only show errors if asked to show settings
-    try:
-        load_settings()
-    except Exception as e:
-        if args.show:
-            print e
-
-    # call requested subcommand
-    locals()[args.subcommand]()
 
 if __name__ == '__main__':
     sys.stdout = codecs.getwriter('UTF-8')(sys.stdout)
@@ -207,18 +191,11 @@ if __name__ == '__main__':
 
     # settings command
     settings_parser = subparsers.add_parser('settings', help='Show or configure settings')
-    settings_subparsers = settings_parser.add_subparsers(dest='subcommand')
-
-    # settings subcommand set
-    settings_set_parser = settings_subparsers.add_parser('set', help='Modify settings')
-    settings_set_parser.add_argument('--apikey', action='store', help='API Key to use')
-    settings_set_parser.add_argument('--username', action='store', help='Username to use')
-    settings_set_parser.add_argument('--password', action='store', help='Password to use')
-    settings_set_parser.set_defaults(command=settings_command)
-
-    # settings subcommand show
-    settings_show_parser = settings_subparsers.add_parser('show', help='Show current settings')
-    settings_show_parser.set_defaults(command=settings_command)
+    settings_parser.add_argument('--apikey', action='store', help='API Key to use')
+    settings_parser.add_argument('--username', action='store', help='Username to use')
+    settings_parser.add_argument('--password', action='store', help='Password to use')
+    settings_parser.add_argument('--show', action='store_true', help='Show current settings')
+    settings_parser.set_defaults(command=settings_command)
 
     # parse args
     args = parser.parse_args()
@@ -227,6 +204,7 @@ if __name__ == '__main__':
     if command == settings_command:
         command(args)
     else:
-        # validate settings first
-        if settings_valid():
-            command(args)
+        settings = load_settings(validate=True)
+        if settings:
+            api = API(settings)
+            command(api, args)
